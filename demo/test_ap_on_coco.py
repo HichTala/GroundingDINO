@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from groundingdino.models import build_model
 import groundingdino.datasets.transforms as T
 from groundingdino.util import box_ops, get_tokenlizer
-from groundingdino.util.misc import clean_state_dict
+from groundingdino.util.misc import clean_state_dict, nested_tensor_from_tensor_list
 from groundingdino.util.slconfig import SLConfig
 
 # from torchvision.datasets import CocoDetection
@@ -35,7 +35,7 @@ def load_model(model_config_path: str, model_checkpoint_path: str, device: str =
 def collate_fn(batch):
     # import ipdb; ipdb.set_trace()
     data = {}
-    data["images"] = torch.stack([x["images"] for x in batch])
+    data["images"] = nested_tensor_from_tensor_list([x["images"] for x in batch])
     data["targets"] = [x["targets"] for x in batch]
     return data["images"], data["targets"]
 
