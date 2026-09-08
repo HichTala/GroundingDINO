@@ -47,7 +47,7 @@ def transforms(sample, _transforms):
     boxes = boxes[keep]
 
     target_new = {}
-    image_id = int(sample["id"])
+    image_id = int(sample["image_id"])
     target_new["image_id"] = image_id
     target_new["boxes"] = boxes
     target_new["orig_size"] = torch.as_tensor([int(h), int(w)])
