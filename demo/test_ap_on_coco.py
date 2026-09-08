@@ -256,10 +256,6 @@ if __name__ == "__main__":
                         help="number of topk to select")
 
     # coco info
-    parser.add_argument("--anno_path", type=str,
-                        required=True, help="coco root")
-    parser.add_argument("--image_dir", type=str,
-                        required=True, help="coco image dir")
     parser.add_argument("--num_workers", type=int, default=4,
                         help="number of workers for dataloader")
     args = parser.parse_args()
