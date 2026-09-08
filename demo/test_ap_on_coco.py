@@ -34,10 +34,10 @@ def load_model(model_config_path: str, model_checkpoint_path: str, device: str =
 
 
 def transforms(sample, _transforms):
-    image = sample["image"]
+    image = sample["image"][0]
     w, h = image.size
 
-    boxes = sample["objects"]["bbox"]
+    boxes = sample["objects"][0]["bbox"]
     boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
     boxes[:, 2:] += boxes[:, :2]  # xywh -> xyxy
     boxes[:, 0::2].clamp_(min=0, max=w)
@@ -47,7 +47,7 @@ def transforms(sample, _transforms):
     boxes = boxes[keep]
 
     target_new = {}
-    image_id = int(sample["image_id"])
+    image_id = int(sample["image_id"][0])
     target_new["image_id"] = image_id
     target_new["boxes"] = boxes
     target_new["orig_size"] = torch.as_tensor([int(h), int(w)])
