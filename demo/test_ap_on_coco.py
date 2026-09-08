@@ -183,7 +183,7 @@ class PostProcessCocoGrounding(nn.Module):
         cat_list = [item['name'] for item in category_dict]
         captions, cat2tokenspan = build_captions_and_token_span(cat_list, True)
         tokenspanlist = [cat2tokenspan[cat] for cat in cat_list]
-        positive_map = create_positive_map_from_span(
+        self.positive_map = create_positive_map_from_span(
             tokenlizer(captions), tokenspanlist)  # 80, 256. normed
 
         # id_map = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11, 11: 13, 12: 14, 13: 15, 14: 16,
