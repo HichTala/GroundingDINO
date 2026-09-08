@@ -6,6 +6,7 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
+from datasets import load_dataset
 from torch.utils.data import DataLoader, DistributedSampler
 
 from groundingdino.models import build_model
@@ -29,6 +30,31 @@ def load_model(model_config_path: str, model_checkpoint_path: str, device: str =
     model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
     model.eval()
     return model
+
+
+def transforms(sample, _transforms):
+    image = sample["image"]
+    w, h = image.size
+
+    boxes = sample["objects"]["bbox"]
+    boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
+    boxes[:, 2:] += boxes[:, :2]  # xywh -> xyxy
+    boxes[:, 0::2].clamp_(min=0, max=w)
+    boxes[:, 1::2].clamp_(min=0, max=h)
+    # filt invalid boxes/masks/keypoints
+    keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
+    boxes = boxes[keep]
+
+    target_new = {}
+    image_id = int(sample["id"])
+    target_new["image_id"] = image_id
+    target_new["boxes"] = boxes
+    target_new["orig_size"] = torch.as_tensor([int(h), int(w)])
+
+    if _transforms is not None:
+        image, target_new = _transforms(image, target_new)
+
+    return image, target_new
 
 
 class CocoDetection(torchvision.datasets.CocoDetection):
@@ -78,8 +104,14 @@ class PostProcessCocoGrounding(nn.Module):
         positive_map = create_positive_map_from_span(
             tokenlizer(captions), tokenspanlist)  # 80, 256. normed
 
-        id_map = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11, 11: 13, 12: 14, 13: 15, 14: 16, 15: 17, 16: 18, 17: 19, 18: 20, 19: 21, 20: 22, 21: 23, 22: 24, 23: 25, 24: 27, 25: 28, 26: 31, 27: 32, 28: 33, 29: 34, 30: 35, 31: 36, 32: 37, 33: 38, 34: 39, 35: 40, 36: 41, 37: 42, 38: 43, 39: 44, 40: 46,
-                  41: 47, 42: 48, 43: 49, 44: 50, 45: 51, 46: 52, 47: 53, 48: 54, 49: 55, 50: 56, 51: 57, 52: 58, 53: 59, 54: 60, 55: 61, 56: 62, 57: 63, 58: 64, 59: 65, 60: 67, 61: 70, 62: 72, 63: 73, 64: 74, 65: 75, 66: 76, 67: 77, 68: 78, 69: 79, 70: 80, 71: 81, 72: 82, 73: 84, 74: 85, 75: 86, 76: 87, 77: 88, 78: 89, 79: 90}
+        id_map = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11, 11: 13, 12: 14, 13: 15, 14: 16,
+                  15: 17, 16: 18, 17: 19, 18: 20, 19: 21, 20: 22, 21: 23, 22: 24, 23: 25, 24: 27, 25: 28, 26: 31,
+                  27: 32, 28: 33, 29: 34, 30: 35, 31: 36, 32: 37, 33: 38, 34: 39, 35: 40, 36: 41, 37: 42, 38: 43,
+                  39: 44, 40: 46,
+                  41: 47, 42: 48, 43: 49, 44: 50, 45: 51, 46: 52, 47: 53, 48: 54, 49: 55, 50: 56, 51: 57, 52: 58,
+                  53: 59, 54: 60, 55: 61, 56: 62, 57: 63, 58: 64, 59: 65, 60: 67, 61: 70, 62: 72, 63: 73, 64: 74,
+                  65: 75, 66: 76, 67: 77, 68: 78, 69: 79, 70: 80, 71: 81, 72: 82, 73: 84, 74: 85, 75: 86, 76: 87,
+                  77: 88, 78: 89, 79: 90}
 
         # build a mapping from label_id to pos_map
         new_pos_map = torch.zeros((91, 256))
@@ -154,8 +186,10 @@ def main(args):
             T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
         ]
     )
-    dataset = CocoDetection(
-        args.image_dir, args.anno_path, transforms=transform)
+    dataset = load_dataset("/lustre/fsn1/projects/rech/mvq/ubc18yy/datasets/cadot", split="test")
+    dataset = dataset.with_transform(
+        lambda x: transforms(x, transform)
+    )
     data_loader = DataLoader(
         dataset, batch_size=1, shuffle=False, num_workers=args.num_workers, collate_fn=collate_fn)
 
@@ -192,9 +226,9 @@ def main(args):
             target["image_id"]: output for target, output in zip(targets, results)}
         evaluator.update(cocogrounding_res)
 
-        if (i+1) % 30 == 0:
+        if (i + 1) % 30 == 0:
             used_time = time.time() - start
-            eta = len(data_loader) / (i+1e-5) * used_time - used_time
+            eta = len(data_loader) / (i + 1e-5) * used_time - used_time
             print(
                 f"processed {i}/{len(data_loader)} images. time: {used_time:.2f}s, ETA: {eta:.2f}s")
 
