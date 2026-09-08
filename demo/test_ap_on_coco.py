@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from datasets import load_dataset
+from pycocotools.coco import COCO
 from torch.utils.data import DataLoader, DistributedSampler
 
 from groundingdino.models import build_model
@@ -55,6 +56,77 @@ def transforms(sample, _transforms):
         image, target_new = _transforms(image, target_new)
 
     return image, target_new
+
+def hf_to_coco(dataset):
+    """
+    Convert an HF dataset split to a pycocotools COCO object.
+
+    Returns
+    -------
+    coco : pycocotools.coco.COCO
+    """
+    images = []
+    annotations = []
+
+    # Find all category IDs appearing in the dataset
+    category_ids = set()
+
+    for row in dataset:
+        image_id = int(row["image_id"])
+        width = int(row["width"])
+        height = int(row["height"])
+
+        images.append({
+            "id": image_id,
+            "width": width,
+            "height": height,
+            "file_name": f"{image_id}.jpg",
+        })
+
+        objects = row["objects"]
+
+        for bbox_id, category_id, bbox in zip(
+                objects["bbox_id"],
+                objects["category"],
+                objects["bbox"],
+        ):
+            category_id = int(category_id)
+            x, y, w, h = map(float, bbox)
+
+            category_ids.add(category_id)
+
+            annotations.append({
+                "id": int(bbox_id),  # bbox_id is already unique in cadot
+                "image_id": image_id,
+                "category_id": category_id,
+                "bbox": [x, y, w, h],
+                "area": w * h,
+                "iscrowd": 0,
+            })
+
+    categories = [
+        {
+            "id": category_id,
+            "name": str(category_id),
+            "supercategory": "object",
+        }
+        for category_id in sorted(category_ids)
+    ]
+
+    coco_dict = {
+        "info": {},
+        "licenses": [],
+        "images": images,
+        "annotations": annotations,
+        "categories": categories,
+    }
+
+    # Create an empty COCO object and inject the dataset
+    coco = COCO()
+    coco.dataset = coco_dict
+    coco.createIndex()
+
+    return coco
 
 
 class CocoDetection(torchvision.datasets.CocoDetection):
@@ -187,6 +259,7 @@ def main(args):
         ]
     )
     dataset = load_dataset("/lustre/fsn1/projects/rech/mvq/ubc18yy/datasets/cadot", split="test")
+    coco_dataset = hf_to_coco(dataset)
     dataset = dataset.with_transform(
         lambda x: transforms(x, transform)
     )
@@ -196,14 +269,14 @@ def main(args):
     # build post processor
     tokenlizer = get_tokenlizer.get_tokenlizer(cfg.text_encoder_type)
     postprocessor = PostProcessCocoGrounding(
-        coco_api=dataset.coco, tokenlizer=tokenlizer)
+        coco_api=coco_dataset, tokenlizer=tokenlizer)
 
     # build evaluator
     evaluator = CocoGroundingEvaluator(
-        dataset.coco, iou_types=("bbox",), useCats=True)
+        coco_dataset, iou_types=("bbox",), useCats=True)
 
     # build captions
-    category_dict = dataset.coco.dataset['categories']
+    category_dict = coco_dataset.dataset['categories']
     cat_list = [item['name'] for item in category_dict]
     caption = " . ".join(cat_list) + ' .'
     print("Input text prompt:", caption)
