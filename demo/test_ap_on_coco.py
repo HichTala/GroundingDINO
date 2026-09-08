@@ -40,28 +40,32 @@ def collate_fn(batch):
     return data["images"], data["targets"]
 
 def transforms(sample, _transforms):
-    image = sample["image"][0]
-    w, h = image.size
+    images = []
+    targets = []
+    for image_id, image, objects in zip(sample["image_id"], sample["image"], sample["objects"]):
+        w, h = image.size
 
-    boxes = sample["objects"][0]["bbox"]
-    boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
-    boxes[:, 2:] += boxes[:, :2]  # xywh -> xyxy
-    boxes[:, 0::2].clamp_(min=0, max=w)
-    boxes[:, 1::2].clamp_(min=0, max=h)
-    # filt invalid boxes/masks/keypoints
-    keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
-    boxes = boxes[keep]
+        boxes = objects["bbox"]
+        boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
+        boxes[:, 2:] += boxes[:, :2]  # xywh -> xyxy
+        boxes[:, 0::2].clamp_(min=0, max=w)
+        boxes[:, 1::2].clamp_(min=0, max=h)
+        # filt invalid boxes/masks/keypoints
+        keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
+        boxes = boxes[keep]
 
-    target_new = {}
-    image_id = int(sample["image_id"][0])
-    target_new["image_id"] = image_id
-    target_new["boxes"] = boxes
-    target_new["orig_size"] = torch.as_tensor([int(h), int(w)])
+        target_new = {}
+        image_id = int(image_id)
+        target_new["image_id"] = image_id
+        target_new["boxes"] = boxes
+        target_new["orig_size"] = torch.as_tensor([int(h), int(w)])
 
-    if _transforms is not None:
-        image, target_new = _transforms(image, target_new)
+        if _transforms is not None:
+            image, target_new = _transforms(image, target_new)
+        images.append(image)
+        targets.append(target_new)
 
-    return image, target_new
+    return {"images": images, "targets": targets}
 
 def hf_to_coco(dataset):
     """
